@@ -1,0 +1,78 @@
+name: CI/CD
+
+# Runs tests + lint on every push and PR (fast feedback for the developer).
+# Deploys to staging only when code lands on main (i.e. after a PR merge),
+# and only if the test/lint job passed.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Run tests (pytest)
+        run: pytest -v --maxfail=1
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: test                     # only runs if the test job succeeded
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: staging            # ties this job to a GitHub "environment"
+                                     # so its secrets are scoped + can require
+                                     # manual approval if you turn that on
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build (placeholder for real build step, e.g. Docker image)
+        run: echo "Build step goes here (e.g. docker build & push to registry)"
+
+      # --- Real deploy step ---
+      # This example deploys via a "deploy hook" URL pattern, which is how
+      # platforms like Render, Railway, Fly.io, and similar PaaS providers
+      # work: you POST to a secret URL and they pull/build/deploy the latest
+      # code. Swap this for `ssh` + rsync, `kubectl apply`, `eb deploy`, etc.
+      # depending on the actual staging target -- the important part is that
+      # every credential used here comes from `secrets.*`, never hardcoded.
+      - name: Deploy to staging
+        env:
+          STAGING_DEPLOY_HOOK_URL: ${{ secrets.STAGING_DEPLOY_HOOK_URL }}
+        run: |
+          curl -X POST "$STAGING_DEPLOY_HOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"commit\": \"${{ github.sha }}\"}"
+
+      - name: Smoke test staging health endpoint
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+        run: |
+          sleep 15  # give the deploy a moment to come up
+          curl -f "$STAGING_URL/health" || (echo "Staging health check failed" && exit 1)
