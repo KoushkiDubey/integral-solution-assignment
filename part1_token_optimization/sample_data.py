@@ -11,7 +11,6 @@ agent call looks like in production: a bloated raw API dump, full replayed
 history, and an over-broad document retrieval -- the three usual suspects.
 """
 
-import json
 import random
 
 random.seed(42)
